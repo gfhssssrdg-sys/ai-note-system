@@ -1,7 +1,7 @@
 """内容处理器 - 统一处理各种类型的输入内容"""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
@@ -17,17 +17,10 @@ class ContentItem:
     title: Optional[str] = None
     content: Optional[str] = None
     raw_content: Optional[bytes] = None
-    metadata: Dict[str, Any] = None
-    created_at: datetime = None
-    tags: List[str] = None
-    
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now()
-        if self.metadata is None:
-            self.metadata = {}
-        if self.tags is None:
-            self.tags = []
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+    tags: List[str] = field(default_factory=list)
+    vector_ids: List[str] = field(default_factory=list)  # 向量记录ID列表
     
     def generate_id(self) -> str:
         """基于内容生成唯一ID"""
@@ -59,9 +52,10 @@ class ContentProcessor(ABC):
 class NoteSystem:
     """笔记系统主类"""
     
-    def __init__(self):
+    def __init__(self, vector_store=None):
         self.processors: List[ContentProcessor] = []
         self.content_items: Dict[str, ContentItem] = {}
+        self.vector_store = vector_store
     
     def register_processor(self, processor: ContentProcessor):
         """注册内容处理器"""
@@ -79,13 +73,40 @@ class NoteSystem:
             ContentItem: 处理后的内容项
         """
         # 找到合适的处理器
-        for processor in self.processors:
-            if processor.can_process(source):
-                item = processor.process(source)
-                self.content_items[item.id] = item
-                return item
+        processor = None
+        for p in self.processors:
+            if p.can_process(source):
+                processor = p
+                break
         
-        raise ValueError(f"No processor found for source: {source}")
+        if not processor:
+            raise ValueError(f"No processor found for source: {source}")
+        
+        # 处理内容
+        item = processor.process(source)
+        
+        # 保存到内存
+        self.content_items[item.id] = item
+        
+        # 向量存储（如果配置了）
+        if self.vector_store and item.content:
+            try:
+                vector_ids = self.vector_store.add_note(
+                    note_id=item.id,
+                    title=item.title or "Untitled",
+                    content=item.content,
+                    metadata={
+                        "source_type": item.source_type,
+                        "source_path": item.source_path,
+                        "tags": item.tags
+                    }
+                )
+                item.vector_ids = vector_ids
+                print(f"✓ Vectorized note {item.id}: {len(vector_ids)} chunks")
+            except Exception as e:
+                print(f"⚠ Vectorization failed for {item.id}: {e}")
+        
+        return item
     
     def add_url(self, url: str) -> ContentItem:
         """添加网页链接"""
@@ -111,6 +132,22 @@ class NoteSystem:
         """列出所有笔记"""
         return list(self.content_items.values())
     
+    def delete_note(self, note_id: str) -> bool:
+        """删除笔记"""
+        if note_id not in self.content_items:
+            return False
+        
+        # 删除向量
+        if self.vector_store:
+            try:
+                self.vector_store.delete(note_id)
+            except Exception as e:
+                print(f"⚠ Failed to delete vectors for {note_id}: {e}")
+        
+        # 删除内存中的记录
+        del self.content_items[note_id]
+        return True
+    
     def ask(self, question: str) -> Dict[str, Any]:
         """
         基于知识库回答问题
@@ -121,19 +158,56 @@ class NoteSystem:
             question: 用户问题
         
         Returns:
-            {
-                "answer": str,           # 回答内容
-                "sources": List[str],    # 来源笔记ID列表
-                "confidence": float,     # 置信度
-                "related_notes": List[str]  # 相关笔记
-            }
+            回答结果字典
         """
-        # TODO: 实现基于向量检索和知识图谱的问答
-        # 这是核心功能，需要结合 vector_store 和 knowledge_graph
+        if not self.vector_store:
+            return {
+                "answer": "向量数据库未配置，无法进行语义搜索",
+                "sources": [],
+                "confidence": 0,
+                "has_sufficient_sources": False,
+                "source_chunks": []
+            }
+        
+        from core.query_engine import QueryEngine
+        
+        engine = QueryEngine(vector_store=self.vector_store)
+        answer = engine.query(question)
         
         return {
-            "answer": "问答功能尚未实现，请先配置向量数据库和LLM",
-            "sources": [],
-            "confidence": 0,
-            "related_notes": []
+            "answer": answer.content,
+            "sources": answer.sources,
+            "confidence": answer.confidence,
+            "has_sufficient_sources": answer.has_sufficient_sources,
+            "source_chunks": [
+                {
+                    "note_id": c["note_id"],
+                    "title": c.get("title"),
+                    "content": c["content"][:200] + "...",
+                    "similarity": c["similarity"]
+                }
+                for c in answer.source_chunks
+            ]
         }
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取系统统计信息"""
+        stats = {
+            "total_notes": len(self.content_items),
+            "notes_by_type": {},
+            "vector_count": 0
+        }
+        
+        # 按类型统计
+        for note in self.content_items.values():
+            t = note.source_type
+            stats["notes_by_type"][t] = stats["notes_by_type"].get(t, 0) + 1
+        
+        # 向量统计
+        if self.vector_store:
+            try:
+                stats["vector_count"] = self.vector_store.count()
+            except:
+                pass
+        
+        return stats

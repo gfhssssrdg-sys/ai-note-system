@@ -26,7 +26,7 @@ from connectors.image_processor import ImageProcessor
 app = FastAPI(
     title="AI Note System",
     description="AI 融合的笔记系统",
-    version="0.1.0"
+    version="0.2.0"
 )
 
 # 静态文件
@@ -43,18 +43,31 @@ templates = Jinja2Templates(directory=templates_dir)
 upload_dir = Path(__file__).parent.parent / "uploads"
 upload_dir.mkdir(exist_ok=True)
 
+# 数据目录
+data_dir = Path(__file__).parent.parent / "data"
+data_dir.mkdir(exist_ok=True)
+
+# 初始化向量存储
+vector_store = ChromaVectorStore(persist_dir=str(data_dir / "chroma"))
+
 # 初始化系统
-system = NoteSystem()
+system = NoteSystem(vector_store=vector_store)
 system.register_processor(WebFetcher())
 system.register_processor(PDFParser())
 system.register_processor(MarkdownParser())
 system.register_processor(ImageProcessor())
 
+print(f"✓ System initialized with {vector_store.count()} vectors in database")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """首页"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    stats = system.get_stats()
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "stats": stats
+    })
 
 
 @app.get("/upload", response_class=HTMLResponse)
@@ -74,6 +87,7 @@ async def upload_url(url: str = Form(...)):
                 "id": note.id,
                 "title": note.title,
                 "type": note.source_type,
+                "vector_chunks": len(note.vector_ids),
                 "content_preview": note.content[:500] + "..." if len(note.content) > 500 else note.content
             }
         })
@@ -99,6 +113,7 @@ async def upload_file(file: UploadFile = File(...)):
                 "id": note.id,
                 "title": note.title,
                 "type": note.source_type,
+                "vector_chunks": len(note.vector_ids),
                 "content_preview": note.content[:500] + "..." if len(note.content) > 500 else note.content
             }
         })
@@ -126,11 +141,18 @@ async def get_notes():
                 "id": n.id,
                 "title": n.title or "Untitled",
                 "type": n.source_type,
+                "vector_chunks": len(n.vector_ids),
                 "created_at": n.created_at.isoformat() if n.created_at else None
             }
             for n in notes
         ]
     }
+
+
+@app.get("/api/stats")
+async def get_stats():
+    """获取系统统计"""
+    return system.get_stats()
 
 
 @app.get("/note/{note_id}", response_class=HTMLResponse)
@@ -162,7 +184,8 @@ async def ask_question(question: str = Form(...)):
             "answer": result.get("answer", ""),
             "sources": result.get("sources", []),
             "confidence": result.get("confidence", 0),
-            "has_sufficient_sources": result.get("has_sufficient_sources", False)
+            "has_sufficient_sources": result.get("has_sufficient_sources", False),
+            "source_chunks": result.get("source_chunks", [])
         })
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -170,22 +193,35 @@ async def ask_question(question: str = Form(...)):
 
 @app.get("/api/search")
 async def search_notes(q: str):
-    """搜索笔记"""
-    notes = system.list_notes()
-    results = []
-    query_lower = q.lower()
+    """语义搜索笔记"""
+    if not vector_store:
+        return {"results": []}
     
-    for note in notes:
-        if (query_lower in (note.title or "").lower() or 
-            query_lower in (note.content or "").lower()):
-            results.append({
-                "id": note.id,
-                "title": note.title or "Untitled",
-                "type": note.source_type,
-                "preview": note.content[:200] + "..." if len(note.content) > 200 else note.content
-            })
-    
-    return {"results": results}
+    try:
+        results = vector_store.search(q, top_k=10)
+        return {
+            "results": [
+                {
+                    "note_id": r["note_id"],
+                    "title": r.get("title", "Untitled"),
+                    "content": r["content"][:200] + "...",
+                    "similarity": r["similarity"]
+                }
+                for r in results
+            ]
+        }
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+
+@app.delete("/api/notes/{note_id}")
+async def delete_note(note_id: str):
+    """删除笔记"""
+    try:
+        success = system.delete_note(note_id)
+        return JSONResponse({"success": success})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":
