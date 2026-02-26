@@ -9,8 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.content_processor import NoteSystem
 from core.vector_store import ChromaVectorStore
-from core.knowledge_graph import KnowledgeGraph
-from core.query_engine import QueryEngine
+from core.llm import LLMService, get_llm_service
 from connectors.web_fetcher import WebFetcher
 from connectors.pdf_parser import PDFParser
 from connectors.markdown_parser import MarkdownParser
@@ -40,17 +39,23 @@ def create_system(data_dir: str = "./data") -> NoteSystem:
     return system
 
 
+def check_api_key():
+    """检查 API 密钥"""
+    if not os.getenv("OPENAI_API_KEY"):
+        print("⚠️  Warning: OPENAI_API_KEY not set")
+        print("   Set it with: export OPENAI_API_KEY='your-key'")
+        return False
+    return True
+
+
 def main():
     """主函数"""
     print("=" * 50)
-    print("🧠 AI Note System v0.2.0")
+    print("🧠 AI Note System v0.3.0")
     print("=" * 50)
     
     # 检查 API 密钥
-    if not os.getenv("OPENAI_API_KEY"):
-        print("\n⚠️  Warning: OPENAI_API_KEY not set in environment")
-        print("   Vectorization will not work without it.")
-        print("   Set it with: export OPENAI_API_KEY='your-key'")
+    has_key = check_api_key()
     
     # 创建系统
     system = create_system()
@@ -62,11 +67,16 @@ def main():
     print(f"  - Notes in memory: {stats['total_notes']}")
     print(f"  - Vectors in database: {stats['vector_count']}")
     
+    if has_key:
+        print("  - LLM: ✓ OpenAI connected")
+    else:
+        print("  - LLM: ✗ No API key (问答功能受限)")
+    
     print("\n使用示例:")
     print('  from main import create_system')
     print('  system = create_system()')
     print('  note = system.add_url("https://example.com")')
-    print('  result = system.ask("你的问题")')
+    print('  result = system.ask("你的问题")  # LLM 生成回答')
     print()
     print("启动 Web UI:")
     print('  python run_web.py')

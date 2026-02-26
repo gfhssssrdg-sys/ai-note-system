@@ -2,169 +2,117 @@
 
 一个高度与 AI 融合的笔记系统，支持多模态内容管理和智能知识检索。
 
-## 核心理念
-
-- **知识可追溯**：所有回答必须基于内部知识库，无来源则不答
-- **多模态支持**：网页、PDF、Markdown、图片统一处理
-- **智能关联**：AI 自动建立笔记间的语义联系
-- **主动整理**：上传即入库，自动索引无需手动干预
-
-## 功能特性
+## ✨ 功能特性
 
 ### 📥 内容接入
-- [x] 网页链接抓取与解析
-- [x] PDF 文档 OCR 与文本提取
-- [x] Markdown 文件导入
-- [x] 图片 OCR 与内容理解
+- 网页链接抓取与解析
+- PDF 文档文本提取
+- Markdown 文件导入
+- 图片 OCR 与内容理解
 
 ### 🧠 AI 处理
-- [x] 自动标签与分类
-- [x] 语义摘要生成
-- [x] 实体识别与链接
-- [x] 向量索引构建
+- **OpenAI 嵌入** (text-embedding-3-small)
+- 自动文本分块与向量化
+- 语义相似度搜索
+- **LLM 智能回答** (GPT-4o-mini)
 
 ### 🔍 知识检索
-- [x] 自然语言问答
-- [x] 相关笔记推荐
-- [x] 知识图谱可视化
-- [x] 来源追溯与引用
+- 自然语言问答（基于 LLM）
+- **核心原则：无来源不回答**
+- 相关度评分与来源追溯
+- 相似内容推荐
 
-## 系统架构
+## 🚀 快速开始
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      用户交互层                           │
-│         (Web UI / CLI / API)                            │
-└─────────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────────┐
-│                      内容处理层                           │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
-│  │ Web抓取 │ │ PDF解析 │ │ MD处理  │ │ 图片OCR │       │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘       │
-└─────────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────────┐
-│                      AI 分析层                           │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
-│  │ 向量化  │ │ 摘要生成│ │ 实体提取│ │ 关系构建│       │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘       │
-└─────────────────────────────────────────────────────────┘
-                           │
-┌─────────────────────────────────────────────────────────┐
-│                      存储层                              │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐                   │
-│  │ 文档存储│ │ 向量DB  │ │ 图谱DB  │                   │
-│  └─────────┘ └─────────┘ └─────────┘                   │
-└─────────────────────────────────────────────────────────┘
-```
-
-## 快速开始
+### 1. 安装依赖
 
 ```bash
-# 安装依赖
 pip install -r requirements.txt
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入你的 API 密钥
-
-# 启动系统
-python main.py
 ```
 
-## 使用示例
+### 2. 配置 API 密钥
 
-### 上传内容
+```bash
+export OPENAI_API_KEY='your-openai-api-key'
+```
+
+### 3. 启动 Web UI
+
+```bash
+python run_web.py
+```
+
+访问 http://127.0.0.1:8000
+
+## 💻 使用示例
+
+### Python API
+
 ```python
-from note_system import NoteSystem
+from main import create_system
 
-system = NoteSystem()
+# 创建系统
+system = create_system()
 
 # 上传网页
 note = system.add_url("https://example.com/article")
+print(f"Added: {note.title} ({len(note.vector_ids)} chunks)")
 
-# 上传 PDF
+# 上传文件
 note = system.add_pdf("./document.pdf")
 
-# 上传图片
-note = system.add_image("./screenshot.png")
+# 知识问答
+result = system.ask("这篇文章讲了什么？")
+print(result['answer'])
+# 输出: "根据参考资料[1]、[2]，这篇文章主要讲述了..."
 ```
 
-### 知识问答
-```python
-# 基于知识库回答
-answer = system.ask("什么是第二大脑？")
-# 返回: {
-#   "answer": "第二大脑是指...",
-#   "sources": ["note_id_1", "note_id_2"],
-#   "confidence": 0.95
-# }
+## 🏗️ 系统架构
 
-# 无相关知识时的回答
-answer = system.ask("明天天气怎么样？")
-# 返回: {
-#   "answer": "抱歉，我的知识库中没有相关信息。请自行搜集资料。",
-#   "sources": [],
-#   "confidence": 0
-# }
+```
+用户输入 → 内容处理器 → 文本提取 → 智能分块 → OpenAI嵌入 → ChromaDB存储
+                                                          ↓
+用户提问 → 查询向量化 → 向量相似搜索(Top-K) → LLM生成回答 ← 上下文构建
 ```
 
-## 项目结构
+## 📁 项目结构
 
 ```
 ai-note-system/
 ├── core/                   # 核心模块
-│   ├── __init__.py
-│   ├── content_processor.py    # 内容处理
-│   ├── vector_store.py         # 向量存储
-│   ├── knowledge_graph.py      # 知识图谱
-│   └── query_engine.py         # 查询引擎
-├── connectors/             # 数据源连接器
-│   ├── __init__.py
+│   ├── content_processor.py   # 内容处理主类
+│   ├── embedding.py           # OpenAI 嵌入服务
+│   ├── chunker.py             # 文本分块
+│   ├── vector_store.py        # ChromaDB 向量存储
+│   ├── query_engine.py        # 查询引擎 + LLM
+│   └── llm.py                 # LLM 服务
+├── connectors/             # 内容连接器
 │   ├── web_fetcher.py
 │   ├── pdf_parser.py
 │   ├── markdown_parser.py
 │   └── image_processor.py
-├── storage/                # 存储适配器
-│   ├── __init__.py
-│   ├── document_store.py
-│   └── vector_db.py
-├── api/                    # API 接口
-│   ├── __init__.py
-│   └── routes.py
-├── ui/                     # 用户界面
-│   ├── web/               # Web 界面
-│   └── cli.py             # 命令行工具
-├── tests/                  # 测试
-├── docs/                   # 文档
-├── config/                 # 配置文件
-├── main.py                 # 入口文件
-├── requirements.txt        # Python 依赖
-└── README.md               # 项目说明
+├── ui/web/                 # Web 界面 (FastAPI)
+├── data/                   # 数据存储
+└── uploads/                # 上传文件
 ```
 
-## 技术栈
+## ⚙️ 配置
 
-- **Python 3.10+** - 核心语言
-- **FastAPI** - Web API 框架
-- **LangChain** - LLM 应用框架
-- **ChromaDB / Pinecone** - 向量数据库
-- **Neo4j** - 知识图谱存储
-- **SQLite / PostgreSQL** - 文档元数据存储
+复制 `.env.example` 为 `.env` 并填写：
 
-## 开发路线
+```
+OPENAI_API_KEY=your_key_here
+```
 
-- [ ] v0.1 - 基础内容处理与存储
-- [ ] v0.2 - AI 分析与向量化
-- [ ] v0.3 - 知识图谱构建
-- [ ] v0.4 - Web UI 与 API
+## 📝 开发路线
+
+- [x] v0.1 - 基础内容处理
+- [x] v0.2 - 向量化与语义搜索
+- [x] v0.3 - LLM 智能回答
+- [ ] v0.4 - 知识图谱 (Neo4j)
+- [ ] v0.5 - 对话历史与上下文
 - [ ] v1.0 - 完整功能发布
 
-## 贡献
-
-欢迎 Issue 和 PR！
-
-## 许可证
+## 📄 许可证
 
 MIT License

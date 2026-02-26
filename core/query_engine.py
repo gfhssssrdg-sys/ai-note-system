@@ -6,6 +6,7 @@ import json
 
 from core.vector_store import VectorStore, ChromaVectorStore
 from core.embedding import get_embedding_service
+from core.llm import LLMService, get_llm_service
 
 
 @dataclass
@@ -30,11 +31,11 @@ class QueryEngine:
         self,
         vector_store: Optional[VectorStore] = None,
         knowledge_graph=None,
-        llm_client=None
+        llm_service: Optional[LLMService] = None
     ):
         self.vector_store = vector_store or ChromaVectorStore()
         self.knowledge_graph = knowledge_graph
-        self.llm = llm_client
+        self.llm = llm_service or get_llm_service()
         self.embedding_service = get_embedding_service()
         
         # 配置
@@ -48,7 +49,7 @@ class QueryEngine:
         流程：
         1. 向量检索相关文档
         2. 检查置信度
-        3. 生成回答（仅在有足够来源时）
+        3. 使用 LLM 生成回答（仅在有足够来源时）
         """
         # 1. 向量检索
         retrieval_results = self.vector_store.search(
@@ -87,11 +88,12 @@ class QueryEngine:
         # 5. 通过知识图谱扩展相关笔记
         related_notes = self._expand_via_graph(source_note_ids)
         
-        # 6. 生成回答
-        if self.llm:
-            answer_content = self._generate_answer_with_llm(question, context, unique_sources)
-        else:
-            answer_content = self._generate_answer_simple(question, unique_sources)
+        # 6. 使用 LLM 生成回答
+        answer_content = self.llm.answer_question(
+            question=question,
+            context=context,
+            sources=unique_sources
+        )
         
         # 7. 计算整体置信度
         avg_similarity = sum(r['similarity'] for r in unique_sources) / len(unique_sources)
@@ -126,62 +128,10 @@ class QueryEngine:
         return list(related)
     
     def _build_context(self, sources: List[Dict]) -> str:
-        """构造LLM上下文"""
+        """构造上下文"""
         context_parts = []
         for i, source in enumerate(sources, 1):
             title = source.get('title', 'Untitled')
             content = source.get('content', '')
             context_parts.append(f"[{i}] 来源: {title}\n{content}\n")
         return "\n".join(context_parts)
-    
-    def _generate_answer_with_llm(self, question: str, context: str, sources: List[Dict]) -> str:
-        """使用LLM生成回答"""
-        if not self.llm:
-            return self._generate_answer_simple(question, sources)
-        
-        # 构造提示词
-        sources_info = "\n".join([
-            f"[{i+1}] {s.get('title', 'Untitled')} (相似度: {s['similarity']:.1%})"
-            for i, s in enumerate(sources)
-        ])
-        
-        prompt = f"""你是一个基于知识库的AI助手。请严格根据以下参考资料回答问题。
-如果资料不足以回答问题，请明确说明无法回答。
-
-参考资料：
-{context}
-
-问题：{question}
-
-请基于以上资料回答。回答要求：
-1. 必须基于提供的资料，不要编造信息
-2. 在回答末尾列出使用的来源编号
-3. 如果资料不充分，明确说明"根据现有资料无法回答"
-
-使用的来源：
-{sources_info}
-"""
-        
-        try:
-            # TODO: 调用 LLM 生成回答
-            # response = self.llm.complete(prompt)
-            # return response
-            return f"[LLM回答功能待接入]\n\n基于找到的相关内容:\n{self._generate_answer_simple(question, sources)}"
-        except Exception as e:
-            print(f"LLM error: {e}")
-            return self._generate_answer_simple(question, sources)
-    
-    def _generate_answer_simple(self, question: str, sources: List[Dict]) -> str:
-        """简单回答生成（无LLM时）"""
-        if not sources:
-            return "抱歉，我的知识库中没有相关信息。请自行搜集资料。"
-        
-        parts = [f"根据知识库中的 {len(sources)} 条相关记录:\n"]
-        
-        for i, source in enumerate(sources, 1):
-            title = source.get('title', 'Untitled')
-            content = source.get('content', '')[:300]
-            similarity = source.get('similarity', 0)
-            parts.append(f"\n[{i}] {title} (相关度: {similarity:.1%})\n{content}...")
-        
-        return "\n".join(parts)

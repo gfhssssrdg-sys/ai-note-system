@@ -1,13 +1,12 @@
 """FastAPI Web 应用"""
 
 from fastapi import FastAPI, File, UploadFile, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import shutil
-import tempfile
-from typing import List, Optional
+import json
 import sys
 
 # 添加项目根目录到路径
@@ -15,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.content_processor import NoteSystem
 from core.vector_store import ChromaVectorStore
-from core.knowledge_graph import KnowledgeGraph
 from core.query_engine import QueryEngine
 from connectors.web_fetcher import WebFetcher
 from connectors.pdf_parser import PDFParser
@@ -26,7 +24,7 @@ from connectors.image_processor import ImageProcessor
 app = FastAPI(
     title="AI Note System",
     description="AI 融合的笔记系统",
-    version="0.2.0"
+    version="0.3.0"
 )
 
 # 静态文件
@@ -57,7 +55,7 @@ system.register_processor(PDFParser())
 system.register_processor(MarkdownParser())
 system.register_processor(ImageProcessor())
 
-print(f"✓ System initialized with {vector_store.count()} vectors in database")
+print(f"✓ System initialized with {vector_store.count()} vectors")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -99,12 +97,10 @@ async def upload_url(url: str = Form(...)):
 async def upload_file(file: UploadFile = File(...)):
     """上传文件"""
     try:
-        # 保存文件
         file_path = upload_dir / file.filename
         with file_path.open("wb") as f:
             shutil.copyfileobj(file.file, f)
         
-        # 处理文件
         note = system.add_content(str(file_path))
         
         return JSONResponse({
@@ -176,7 +172,7 @@ async def ask_page(request: Request):
 
 @app.post("/api/ask")
 async def ask_question(question: str = Form(...)):
-    """提问 API"""
+    """提问 API - LLM 生成回答"""
     try:
         result = system.ask(question)
         return JSONResponse({
