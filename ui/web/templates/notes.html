@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}笔记列表 - AI Note System{% endblock %}
+
+{% block content %}<div class="page-header">
+    <h1>📝 笔记列表</h1>
+    <div class="search-box">
+        <input type="text" id="search-input" placeholder="搜索笔记..." autocomplete="off">
+        <button id="search-btn">🔍</button>
+    </div>
+</div>
+
+<div id="notes-container" class="notes-grid">
+    <div class="loading">正在加载笔记...</div>
+</div>
+
+<div id="search-results" class="search-results" style="display: none;"></div>
+
+<div class="empty-state" id="empty-state" style="display: none;">
+    <p>暂无笔记</p>
+    <a href="/upload" class="btn btn-primary">上传第一篇笔记</a>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+let allNotes = [];
+
+// 加载笔记列表
+async function loadNotes() {
+    const container = document.getElementById('notes-container');
+    const emptyState = document.getElementById('empty-state');
+    
+    try {
+        const res = await fetch('/api/notes');
+        const data = await res.json();
+        allNotes = data.notes;
+        
+        if (allNotes.length === 0) {
+            container.style.display = 'none';
+            emptyState.style.display = 'block';
+            return;
+        }
+        
+        renderNotes(allNotes);
+    } catch (err) {
+        container.innerHTML = `<div class="error-box">加载失败: ${err.message}</div>`;
+    }
+}
+
+// 渲染笔记列表
+function renderNotes(notes) {
+    const container = document.getElementById('notes-container');
+    
+    if (notes.length === 0) {
+        container.innerHTML = '<div class="no-results">没有找到匹配的笔记</div>';
+        return;
+    }
+    
+    container.innerHTML = notes.map(note => {
+        const typeIcons = {
+            'url': '🌐',
+            'pdf': '📄',
+            'markdown': '📝',
+            'image': '🖼️'
+        };
+        const icon = typeIcons[note.type] || '📄';
+        
+        return `
+            <a href="/note/${note.id}" class="note-card">
+                <div class="note-header">
+                    <span class="note-type">${icon} ${note.type}</span>
+                    <span class="note-date">${note.created_at ? new Date(note.created_at).toLocaleDateString() : ''}</span>
+                </div>
+                <h3 class="note-title">${note.title}</h3>
+            </a>
+        `;
+    }).join('');
+}
+
+// 搜索功能
+async function searchNotes(query) {
+    if (!query.trim()) {
+        renderNotes(allNotes);
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        renderNotes(data.results.map(r => ({
+            id: r.id,
+            title: r.title,
+            type: r.type,
+            created_at: null,
+            preview: r.preview
+        })));
+    } catch (err) {
+        console.error('搜索失败:', err);
+    }
+}
+
+// 事件监听
+document.getElementById('search-input').addEventListener('input', (e) => {
+    searchNotes(e.target.value);
+});
+
+document.getElementById('search-btn').addEventListener('click', () => {
+    searchNotes(document.getElementById('search-input').value);
+});
+
+// 初始化
+loadNotes();
+</script>
+{% endblock %}

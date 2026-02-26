@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Note System{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/">🧠 AI Note System</a>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/">首页</a></li>
+            <li><a href="/upload">上传</a></li>
+            <li><a href="/notes">笔记</a></li>
+            <li><a href="/ask">问答</a></li>
+        </ul>
+    </nav>
+    
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="footer">
+        <p>AI Note System v0.1.0 - 无证据，不回答</p>
+    </footer>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

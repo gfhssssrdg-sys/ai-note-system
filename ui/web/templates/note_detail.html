@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}{{ note.title or 'Note Detail' }} - AI Note System{% endblock %}
+
+{% block content %}<div class="note-detail">
+    <div class="note-detail-header">
+        <div class="breadcrumb">
+            <a href="/notes">← 返回笔记列表</a>
+        </div>
+        
+        <div class="note-meta">
+            <span class="note-type-badge">{{ note.source_type }}</span>
+            <span class="note-date">{{ note.created_at.strftime('%Y-%m-%d %H:%M') if note.created_at else '' }}</span>
+        </div>
+        
+        <h1>{{ note.title or 'Untitled' }}</h1>
+        
+        {% if note.tags %}
+        <div class="note-tags">
+            {% for tag in note.tags %}
+            <span class="tag">#{{ tag }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="note-detail-content">
+        <pre>{{ note.content }}</pre>
+    </div>
+    
+    {% if note.metadata %}
+    <div class="note-metadata">
+        <h3>元数据</h3>
+        <dl>
+            <dt>来源</dt>
+            <dd>{{ note.source_path }}</dd>
+            
+            {% if note.metadata.url %}
+            <dt>URL</dt>
+            <dd><a href="{{ note.metadata.url }}" target="_blank">{{ note.metadata.url }}</a></dd>
+            {% endif %}
+            
+            {% if note.metadata.author %}
+            <dt>作者</dt>
+            <dd>{{ note.metadata.author }}</dd>
+            {% endif %}
+            
+            {% if note.metadata.page_count %}
+            <dt>页数</dt>
+            <dd>{{ note.metadata.page_count }}</dd>
+            {% endif %}
+        </dl>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

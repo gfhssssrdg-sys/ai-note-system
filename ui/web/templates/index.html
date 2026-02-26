@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}AI Note System - 首页{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>🧠 AI Note System</h1>
+    <p class="tagline">AI 融合的笔记系统 - 支持多模态内容管理和智能知识检索</p>
+    
+    <div class="features">
+        <div class="feature-card">
+            <div class="feature-icon">📥</div>
+            <h3>多模态输入</h3>
+            <p>支持网页、PDF、Markdown、图片等多种格式</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3>AI 处理</h3>
+            <p>自动标签、摘要、实体识别和关系构建</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔗</div>
+            <h3>知识关联</h3>
+            <p>自动建立笔记间的语义联系</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔍</div>
+            <h3>智能问答</h3>
+            <p>基于知识库回答，无来源不回答</p>
+        </div>
+    </div>
+    
+    <div class="cta-buttons">
+        <a href="/upload" class="btn btn-primary">开始上传</a>
+        <a href="/ask" class="btn btn-secondary">提问</a>
+    </div>
+</div>
+
+<div class="stats-section">
+    <h2>当前状态</h2>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <span class="stat-number" id="note-count">0</span>
+            <span class="stat-label">笔记数量</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">4</span>
+            <span class="stat-label">支持的格式</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 获取笔记数量
+fetch('/api/notes')
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('note-count').textContent = data.notes.length;
+    });
+</script>
+{% endblock %}

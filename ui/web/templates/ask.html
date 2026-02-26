@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}知识问答 - AI Note System{% endblock %}
+
+{% block content %}<div class="page-header">
+    <h1>🔍 知识问答</h1>
+    <p class="principle">📌 核心原则：<strong>无证据，不回答</strong> - 所有回答必须基于知识库中的内容</p>
+</div>
+
+<div class="ask-container">
+    <div class="question-section">
+        <form id="ask-form" class="ask-form">
+            <div class="form-group">
+                <textarea 
+                    name="question" 
+                    id="question-input"
+                    placeholder="输入你的问题，AI 将基于知识库回答..."
+                    rows="3"
+                    required
+                ></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary btn-large">
+                🤔 提问
+            </button>
+        </form>
+    </div>
+    
+    <div id="answer-section" class="answer-section" style="display: none;">
+        <div class="answer-box">
+            <h3>📝 回答</h3>
+            <div id="answer-content" class="answer-content"></div>
+            
+            <div id="answer-meta" class="answer-meta"></div>
+        </div>
+        
+        <div id="sources-section" class="sources-section" style="display: none;">
+            <h3>📚 参考来源</h3>
+            <ul id="sources-list" class="sources-list"></ul>
+        </div>
+    </div>
+</div>
+
+<div class="examples-section">
+    <h3>💡 示例问题</h3>
+    <div class="example-questions">
+        <button class="example-btn" data-question="笔记系统中支持哪些文件格式？">笔记系统中支持哪些文件格式？</button>
+        <button class="example-btn" data-question="如何处理上传的图片？">如何处理上传的图片？</button>
+        <button class="example-btn" data-question="知识问答的核心原则是什么？">知识问答的核心原则是什么？</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+// 提问
+document.getElementById('ask-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const question = formData.get('question');
+    const answerSection = document.getElementById('answer-section');
+    const answerContent = document.getElementById('answer-content');
+    const answerMeta = document.getElementById('answer-meta');
+    const sourcesSection = document.getElementById('sources-section');
+    const sourcesList = document.getElementById('sources-list');
+    
+    // 显示加载状态
+    answerSection.style.display = 'block';
+    answerContent.innerHTML = '<div class="loading">正在思考...</div>';
+    sourcesSection.style.display = 'none';
+    
+    try {
+        const res = await fetch('/api/ask', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            answerContent.innerHTML = formatAnswer(data.answer);
+            
+            // 置信度显示
+            const confidence = data.confidence || 0;
+            const confidenceClass = confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low';
+            
+            answerMeta.innerHTML = `
+                <div class="confidence confidence-${confidenceClass}">
+                    置信度: ${(confidence * 100).toFixed(1)}%
+                </div>
+            `;
+            
+            // 来源列表
+            if (data.sources && data.sources.length > 0) {
+                sourcesSection.style.display = 'block';
+                sourcesList.innerHTML = data.sources.map(id => `
+                    <li><a href="/note/${id}" target="_blank">查看来源笔记</a></li>
+                `).join('');
+            }
+            
+            // 如果没有足够来源
+            if (!data.has_sufficient_sources) {
+                answerContent.classList.add('insufficient-sources');
+            } else {
+                answerContent.classList.remove('insufficient-sources');
+            }
+        } else {
+            answerContent.innerHTML = `<div class="error-box">❌ ${data.error}</div>`;
+        }
+    } catch (err) {
+        answerContent.innerHTML = `<div class="error-box">❌ 请求失败: ${err.message}</div>`;
+    }
+});
+
+// 格式化回答
+function formatAnswer(text) {
+    // 简单的 Markdown 风格格式化
+    return text
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+}
+
+// 示例问题
+document.querySelectorAll('.example-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const question = btn.dataset.question;
+        document.getElementById('question-input').value = question;
+    });
+});
+</script>
+{% endblock %}
