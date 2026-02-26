@@ -16,36 +16,49 @@
         <div class="feature-card">
             <div class="feature-icon">🤖</div>
             <h3>AI 处理</h3>
-            <p>自动标签、摘要、实体识别和关系构建</p>
+            <p>自动分块、向量化、实体提取、LLM 问答</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🔗</div>
-            <h3>知识关联</h3>
-            <p>自动建立笔记间的语义联系</p>
+            <h3>知识图谱</h3>
+            <p>Neo4j 可视化笔记关联与实体关系</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🔍</div>
             <h3>智能问答</h3>
-            <p>基于知识库回答，无来源不回答</p>
+            <p>GPT-4o-mini 基于知识库生成回答</p>
         </div>
     </div>
     
     <div class="cta-buttons">
         <a href="/upload" class="btn btn-primary">开始上传</a>
         <a href="/ask" class="btn btn-secondary">提问</a>
+        <a href="/graph" class="btn btn-secondary">知识图谱</a>
     </div>
 </div>
 
 <div class="stats-section">
-    <h2>当前状态</h2>
-    <div class="stats-grid">
+    <h2>📊 系统状态</h2>
+    
+    <div class="stats-grid" id="stats-grid">
         <div class="stat-item">
             <span class="stat-number" id="note-count">0</span>
             <span class="stat-label">笔记数量</span>
         </div>
+        
         <div class="stat-item">
-            <span class="stat-number">4</span>
-            <span class="stat-label">支持的格式</span>
+            <span class="stat-number" id="vector-count">0</span>
+            <span class="stat-label">向量片段</span>
+        </div>
+        
+        <div class="stat-item">
+            <span class="stat-number" id="entity-count">0</span>
+            <span class="stat-label">知识图谱实体</span>
+        </div>
+        
+        <div class="stat-item">
+            <span class="stat-number" id="relation-count">0</span>
+            <span class="stat-label">实体关系</span>
         </div>
     </div>
 </div>
@@ -53,11 +66,24 @@
 
 {% block scripts %}
 <script>
-// 获取笔记数量
-fetch('/api/notes')
-    .then(r => r.json())
-    .then(data => {
-        document.getElementById('note-count').textContent = data.notes.length;
-    });
+// 加载统计
+async function loadStats() {
+    try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        
+        document.getElementById('note-count').textContent = data.total_notes || 0;
+        document.getElementById('vector-count').textContent = data.vector_count || 0;
+        
+        if (data.graph_stats) {
+            document.getElementById('entity-count').textContent = data.graph_stats.entities || 0;
+            document.getElementById('relation-count').textContent = data.graph_stats.relations || 0;
+        }
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+loadStats();
 </script>
 {% endblock %}

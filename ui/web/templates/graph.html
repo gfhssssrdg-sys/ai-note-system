@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}知识图谱 - AI Note System{% endblock %}
+
+{% block content %}<div class="page-header">
+    <h1>🔗 知识图谱</h1>
+    <p>可视化笔记间的实体关系和语义连接</p>
+</div>
+
+<div class="graph-stats" id="graph-stats">
+    <span class="stat"><strong id="entity-count">-</strong> 实体</span>
+    <span class="stat"><strong id="relation-count">-</strong> 关系</span>
+    <span class="stat"><strong id="note-count">-</strong> 笔记</span>
+</div>
+
+<div class="graph-container">
+    <div class="graph-sidebar">
+        <div class="search-box">
+            <input type="text" id="entity-search" placeholder="搜索实体...">
+            <button id="search-btn">🔍</button>
+        </div>
+        
+        <div class="entity-list" id="entity-list">
+            <p class="placeholder">加载实体列表...</p>
+        </div>
+    </div>
+    
+    <div class="graph-view" id="graph-view">
+        <div class="graph-placeholder">
+            <p>🕸️ 知识图谱可视化</p>
+            <p class="hint">点击左侧实体查看关联网络</p>
+        </div>
+    </div>
+</div>
+
+<div class="entity-detail" id="entity-detail" style="display: none;">
+    <h3 id="detail-name"></h3>
+    <p id="detail-type"></p>
+    <p id="detail-description"></p>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+let currentGraph = { nodes: [], links: [] };
+
+// 加载图谱统计
+async function loadStats() {
+    try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        
+        if (data.graph_stats) {
+            document.getElementById('entity-count').textContent = data.graph_stats.entities || 0;
+            document.getElementById('relation-count').textContent = data.graph_stats.relations || 0;
+            document.getElementById('note-count').textContent = data.graph_stats.notes || 0;
+        }
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+// 加载实体列表
+async function loadEntities() {
+    try {
+        const res = await fetch('/api/graph/entities');
+        const data = await res.json();
+        
+        const listEl = document.getElementById('entity-list');
+        
+        if (!data.entities || data.entities.length === 0) {
+            listEl.innerHTML = '<p class="placeholder">暂无实体数据<br>请先上传一些笔记</p>';
+            return;
+        }
+        
+        listEl.innerHTML = data.entities.map(e => `
+            <div class="entity-item" data-name="${e.name}" data-type="${e.type}">
+                <span class="entity-type-badge type-${e.type}">${getTypeIcon(e.type)}</span>
+                <span class="entity-name">${e.name}</span>
+            </div>
+        `).join('');
+        
+        // 绑定点击事件
+        document.querySelectorAll('.entity-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const name = item.dataset.name;
+                loadEntityNetwork(name);
+            });
+        });
+        
+    } catch (e) {
+        document.getElementById('entity-list').innerHTML = `<p class="placeholder">加载失败: ${e.message}</p>`;
+    }
+}
+
+// 获取类型图标
+function getTypeIcon(type) {
+    const icons = {
+        'person': '👤',
+        'organization': '🏢',
+        'concept': '💡',
+        'technology': '⚙️',
+        'product': '📦',
+        'location': '📍',
+        'event': '📅',
+        'field': '🔬'
+    };
+    return icons[type] || '🏷️';
+}
+
+// 加载实体网络
+async function loadEntityNetwork(entityName) {
+    try {
+        const res = await fetch(`/api/graph/network?name=${encodeURIComponent(entityName)}`);
+        const data = await res.json();
+        
+        if (data.nodes.length === 0) {
+            document.getElementById('graph-view').innerHTML = `
+                <div class="graph-placeholder">
+                    <p>未找到 "${entityName}" 的关联网络</p>
+                </div>
+            `;
+            return;
+        }
+        
+        renderGraph(data);
+        showEntityDetail(entityName);
+        
+    } catch (e) {
+        console.error('Failed to load network:', e);
+    }
+}
+
+// 渲染 D3 图谱
+function renderGraph(data) {
+    const container = document.getElementById('graph-view');
+    container.innerHTML = '';
+    
+    const width = container.clientWidth;
+    const height = container.clientHeight || 500;
+    
+    // 创建 SVG
+    const svg = d3.select('#graph-view')
+        .append('svg')
+        .attr('width', width)
+        .attr('height', height);
+    
+    // 添加缩放功能
+    const g = svg.append('g');
+    
+    svg.call(d3.zoom()
+        .extent([[0, 0], [width, height]])
+        .scaleExtent([0.5, 4])
+        .on('zoom', (event) => {
+            g.attr('transform', event.transform);
+        }));
+    
+    // 颜色映射
+    const colorScale = d3.scaleOrdinal()
+        .domain(['person', 'organization', 'concept', 'technology', 'product', 'location', 'event', 'field'])
+        .range(['#60a5fa', '#f472b6', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#22d3ee', '#a3e635']);
+    
+    // 创建力导向模拟
+    const simulation = d3.forceSimulation(data.nodes)
+        .force('link', d3.forceLink(data.links).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-300))
+        .force('center', d3.forceCenter(width / 2, height / 2));
+    
+    // 绘制连线
+    const link = g.append('g')
+        .selectAll('line')
+        .data(data.links)
+        .enter()
+        .append('line')
+        .attr('stroke', '#94a3b8')
+        .attr('stroke-width', 1.5);
+    
+    // 绘制节点
+    const node = g.append('g')
+        .selectAll('g')
+        .data(data.nodes)
+        .enter()
+        .append('g')
+        .call(d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended));
+    
+    // 节点圆圈
+    node.append('circle')
+        .attr('r', d => d.id === data.nodes[0]?.id ? 25 : 15)
+        .attr('fill', d => colorScale(d.type) || '#94a3b8')
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2);
+    
+    // 节点文字
+    node.append('text')
+        .text(d => d.name)
+        .attr('x', 20)
+        .attr('y', 5)
+        .attr('font-size', '12px')
+        .attr('fill', '#1e293b');
+    
+    // 节点点击事件
+    node.on('click', (event, d) => {
+        loadEntityNetwork(d.name);
+    });
+    
+    // 更新位置
+    simulation.on('tick', () => {
+        link
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+        
+        node
+            .attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+    
+    function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+    
+    function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+    }
+    
+    function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+    }
+}
+
+// 显示实体详情
+function showEntityDetail(name) {
+    const detailEl = document.getElementById('entity-detail');
+    document.getElementById('detail-name').textContent = name;
+    detailEl.style.display = 'block';
+}
+
+// 搜索实体
+document.getElementById('search-btn').addEventListener('click', () => {
+    const query = document.getElementById('entity-search').value.trim();
+    if (query) {
+        loadEntityNetwork(query);
+    }
+});
+
+document.getElementById('entity-search').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        const query = e.target.value.trim();
+        if (query) {
+            loadEntityNetwork(query);
+        }
+    }
+});
+
+// 初始化
+loadStats();
+loadEntities();
+</script>
+{% endblock %}

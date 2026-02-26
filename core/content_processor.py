@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import hashlib
-import json
 
 
 @dataclass
@@ -20,7 +19,9 @@ class ContentItem:
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     tags: List[str] = field(default_factory=list)
-    vector_ids: List[str] = field(default_factory=list)  # 向量记录ID列表
+    vector_ids: List[str] = field(default_factory=list)
+    entities: List[Dict] = field(default_factory=list)  # 提取的实体
+    relations: List[Dict] = field(default_factory=list)  # 提取的关系
     
     def generate_id(self) -> str:
         """基于内容生成唯一ID"""
@@ -52,10 +53,11 @@ class ContentProcessor(ABC):
 class NoteSystem:
     """笔记系统主类"""
     
-    def __init__(self, vector_store=None):
+    def __init__(self, vector_store=None, knowledge_graph=None):
         self.processors: List[ContentProcessor] = []
         self.content_items: Dict[str, ContentItem] = {}
         self.vector_store = vector_store
+        self.knowledge_graph = knowledge_graph
     
     def register_processor(self, processor: ContentProcessor):
         """注册内容处理器"""
@@ -88,7 +90,7 @@ class NoteSystem:
         # 保存到内存
         self.content_items[item.id] = item
         
-        # 向量存储（如果配置了）
+        # 向量存储
         if self.vector_store and item.content:
             try:
                 vector_ids = self.vector_store.add_note(
@@ -102,9 +104,43 @@ class NoteSystem:
                     }
                 )
                 item.vector_ids = vector_ids
-                print(f"✓ Vectorized note {item.id}: {len(vector_ids)} chunks")
+                print(f"✓ Vectorized: {len(vector_ids)} chunks")
             except Exception as e:
-                print(f"⚠ Vectorization failed for {item.id}: {e}")
+                print(f"⚠ Vectorization failed: {e}")
+        
+        # 知识图谱（提取实体和关系）
+        if self.knowledge_graph and self.knowledge_graph.is_connected() and item.content:
+            try:
+                from core.entity_extraction import extract_from_note
+                from core.llm import get_llm_service
+                
+                llm = get_llm_service()
+                result = extract_from_note(item, llm)
+                
+                entities = result.get("entities", [])
+                relations = result.get("relations", [])
+                
+                # 保存到笔记
+                item.entities = [
+                    {"id": e.id, "name": e.name, "type": e.entity_type}
+                    for e in entities
+                ]
+                item.relations = [
+                    {"source": r.source, "target": r.target, "type": r.relation_type}
+                    for r in relations
+                ]
+                
+                # 添加到知识图谱
+                self.knowledge_graph.add_note_with_entities(
+                    note_id=item.id,
+                    note_title=item.title or "Untitled",
+                    entities=entities,
+                    relations=relations
+                )
+                print(f"✓ Knowledge graph: {len(entities)} entities, {len(relations)} relations")
+                
+            except Exception as e:
+                print(f"⚠ Knowledge graph extraction failed: {e}")
         
         return item
     
@@ -142,7 +178,14 @@ class NoteSystem:
             try:
                 self.vector_store.delete(note_id)
             except Exception as e:
-                print(f"⚠ Failed to delete vectors for {note_id}: {e}")
+                print(f"⚠ Failed to delete vectors: {e}")
+        
+        # 删除知识图谱
+        if self.knowledge_graph:
+            try:
+                self.knowledge_graph.delete_note(note_id)
+            except Exception as e:
+                print(f"⚠ Failed to delete from graph: {e}")
         
         # 删除内存中的记录
         del self.content_items[note_id]
@@ -153,16 +196,10 @@ class NoteSystem:
         基于知识库回答问题
         
         核心原则：无来源不回答
-        
-        Args:
-            question: 用户问题
-        
-        Returns:
-            回答结果字典
         """
         if not self.vector_store:
             return {
-                "answer": "向量数据库未配置，无法进行语义搜索",
+                "answer": "向量数据库未配置",
                 "sources": [],
                 "confidence": 0,
                 "has_sufficient_sources": False,
@@ -170,8 +207,13 @@ class NoteSystem:
             }
         
         from core.query_engine import QueryEngine
+        from core.llm import get_llm_service
         
-        engine = QueryEngine(vector_store=self.vector_store)
+        engine = QueryEngine(
+            vector_store=self.vector_store,
+            knowledge_graph=self.knowledge_graph,
+            llm_service=get_llm_service()
+        )
         answer = engine.query(question)
         
         return {
@@ -195,7 +237,8 @@ class NoteSystem:
         stats = {
             "total_notes": len(self.content_items),
             "notes_by_type": {},
-            "vector_count": 0
+            "vector_count": 0,
+            "graph_stats": {"notes": 0, "entities": 0, "relations": 0}
         }
         
         # 按类型统计
@@ -207,6 +250,13 @@ class NoteSystem:
         if self.vector_store:
             try:
                 stats["vector_count"] = self.vector_store.count()
+            except:
+                pass
+        
+        # 图谱统计
+        if self.knowledge_graph:
+            try:
+                stats["graph_stats"] = self.knowledge_graph.get_stats()
             except:
                 pass
         

@@ -4,12 +4,11 @@ import os
 import sys
 from pathlib import Path
 
-# 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.content_processor import NoteSystem
 from core.vector_store import ChromaVectorStore
-from core.llm import LLMService, get_llm_service
+from core.knowledge_graph import KnowledgeGraph
 from connectors.web_fetcher import WebFetcher
 from connectors.pdf_parser import PDFParser
 from connectors.markdown_parser import MarkdownParser
@@ -19,18 +18,18 @@ from connectors.image_processor import ImageProcessor
 def create_system(data_dir: str = "./data") -> NoteSystem:
     """创建并配置笔记系统"""
     
-    # 确保数据目录存在
     data_path = Path(data_dir)
     data_path.mkdir(exist_ok=True)
     
-    # 初始化向量存储
-    print(f"Initializing vector store at {data_path / 'chroma'}...")
+    # 初始化组件
+    print("Initializing components...")
     vector_store = ChromaVectorStore(persist_dir=str(data_path / "chroma"))
+    knowledge_graph = KnowledgeGraph()
     
     # 创建系统
-    system = NoteSystem(vector_store=vector_store)
+    system = NoteSystem(vector_store=vector_store, knowledge_graph=knowledge_graph)
     
-    # 注册内容处理器
+    # 注册处理器
     system.register_processor(WebFetcher())
     system.register_processor(PDFParser())
     system.register_processor(MarkdownParser())
@@ -39,47 +38,54 @@ def create_system(data_dir: str = "./data") -> NoteSystem:
     return system
 
 
-def check_api_key():
-    """检查 API 密钥"""
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  Warning: OPENAI_API_KEY not set")
-        print("   Set it with: export OPENAI_API_KEY='your-key'")
-        return False
-    return True
+def check_services():
+    """检查服务状态"""
+    checks = {
+        "OpenAI API": bool(os.getenv("OPENAI_API_KEY")),
+        "Neo4j": bool(os.getenv("NEO4J_PASSWORD"))
+    }
+    return checks
 
 
 def main():
     """主函数"""
-    print("=" * 50)
-    print("🧠 AI Note System v0.3.0")
-    print("=" * 50)
+    print("=" * 60)
+    print("🧠 AI Note System v0.4.0 - 知识图谱版")
+    print("=" * 60)
     
-    # 检查 API 密钥
-    has_key = check_api_key()
+    # 检查服务
+    services = check_services()
     
     # 创建系统
     system = create_system()
     
+    # 显示状态
     print("\n✓ System initialized")
-    print(f"  - Content processors: {len(system.processors)}")
+    print(f"  Content processors: {len(system.processors)}")
     
     stats = system.get_stats()
-    print(f"  - Notes in memory: {stats['total_notes']}")
-    print(f"  - Vectors in database: {stats['vector_count']}")
+    print(f"  Notes in memory: {stats['total_notes']}")
+    print(f"  Vector chunks: {stats['vector_count']}")
     
-    if has_key:
-        print("  - LLM: ✓ OpenAI connected")
-    else:
-        print("  - LLM: ✗ No API key (问答功能受限)")
+    if stats.get('graph_stats'):
+        gs = stats['graph_stats']
+        print(f"  Knowledge Graph: {gs.get('entities', 0)} entities, {gs.get('relations', 0)} relations")
     
-    print("\n使用示例:")
+    print("\nServices:")
+    for name, status in services.items():
+        print(f"  {'✓' if status else '✗'} {name}")
+    
+    print("\nUsage:")
     print('  from main import create_system')
     print('  system = create_system()')
     print('  note = system.add_url("https://example.com")')
-    print('  result = system.ask("你的问题")  # LLM 生成回答')
+    print('  result = system.ask("你的问题")')
     print()
-    print("启动 Web UI:")
+    print("Start Web UI:")
     print('  python run_web.py')
+    print()
+    print("Then open: http://127.0.0.1:8000")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
